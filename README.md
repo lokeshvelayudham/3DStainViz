@@ -2,9 +2,26 @@
 
 <br><br><br>
 
-# CycleGAN and pix2pix in PyTorch
+# StainViz-3D: 2.5D Volumetric Virtual Staining
 
-**Udpate in 2025**: we recently updated the code to support Python 3.11 and PyTorch 2.4. It also supports DDP for single-machine multiple-GPU training. (Please use `torchrun --nproc_per_node=4 train.py ...`)
+This repository extends the PyTorch CycleGAN/pix2pix codebase for StainViz volumetric virtual staining from ordered blockface image sequences.
+
+The implemented release is **2.5D volumetric**, not a native 3D convolutional generator. Models consume a small ordered slab of neighboring planes, usually `K=3` or `K=5`, share 2D encoder weights across planes, fuse slice context with z-aware attention, and train/infer with cross-slice consistency constraints. The output is a full ordered 3D volume assembled by tiled inference.
+
+Implemented StainViz workflows:
+
+- Paired sparse-anchor pix2pix: `--dataset_mode blockface_paired --model stainviz_3d_pix2pix`
+- Unpaired volumetric CycleGAN: `--dataset_mode blockface_unaligned --model stainviz_3d_cycle_gan`
+- Raw-folder manifest preparation, specimen-safe splitting, optional registration preprocessing, normalization, tiled volume inference, metrics, and provenance output
+- Stable inference outputs: ordered PNG/TIFF slices, `volume.npy`, `metrics.json`, `provenance.json`, masks/confidence, and `manifest_used.csv`
+
+Start with [docs/stainviz3d.md](docs/stainviz3d.md) for the full preparation, training, inference, and evaluation workflow.
+
+## Upstream CycleGAN and pix2pix Base
+
+This project preserves the original `pix2pix`, `cycle_gan`, `aligned`, `unaligned`, and `single` workflows while adding the StainViz-3D research pipeline.
+
+**Update in 2025**: we recently updated the code to support Python 3.11 and PyTorch 2.4. It also supports DDP for single-machine multiple-GPU training. (Please use `torchrun --nproc_per_node=4 train.py ...`)
 
 **New**: Please check out [img2img-turbo](https://github.com/GaParmar/img2img-turbo) repo that includes both pix2pix-turbo and CycleGAN-Turbo. Our new one-step image-to-image translation methods can support both paired and unpaired training and produce better results by leveraging the pre-trained StableDiffusion-Turbo model. The inference time for 512x512 image is 0.29 sec on A6000 and 0.11 sec on A100.
 
@@ -19,8 +36,6 @@ This PyTorch implementation produces results comparable to or better than our or
 **Note**: The current software works well with PyTorch 2.4+. Check out the older [branch](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/tree/pytorch0.3.1) that supports PyTorch 0.1-0.3.
 
 You may find useful information in [training/test tips](docs/tips.md) and [frequently asked questions](docs/qa.md). To implement custom models and datasets, check out our [templates](#custom-model-and-dataset). To help users better understand and adapt our codebase, we provide an [overview](docs/overview.md) of the code structure of this repository.
-
-StainViz-3D volumetric virtual staining extensions are documented in [docs/stainviz3d.md](docs/stainviz3d.md).
 
 **CycleGAN: [Project](https://junyanz.github.io/CycleGAN/) | [Paper](https://arxiv.org/pdf/1703.10593.pdf) | [Torch](https://github.com/junyanz/CycleGAN) |
 [Tensorflow Core Tutorial](https://www.tensorflow.org/tutorials/generative/cyclegan) | [PyTorch Colab](https://colab.research.google.com/github/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/CycleGAN.ipynb)**
