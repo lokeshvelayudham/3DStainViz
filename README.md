@@ -1,325 +1,210 @@
-<img src='imgs/horse2zebra.gif' align="right" width=384>
+# StainViz-3D
 
-<br><br><br>
+StainViz-3D is a research-use volumetric virtual staining pipeline for ordered blockface-acquired image sequences. It is designed for datasets produced by sequential blockface imaging systems, where adjacent slices have meaningful acquisition order and spatial adjacency.
 
-# StainViz-3D: 2.5D Volumetric Virtual Staining
+The current implementation is a **2.5D volumetric pipeline**, not a native 3D convolutional generator. The model uses a small slab of neighboring planes, usually `K=3` or `K=5`, shares 2D encoder weights across planes, fuses slice context with z-aware attention, and enforces cross-slice consistency during training and inference.
 
-This repository extends the PyTorch CycleGAN/pix2pix codebase for StainViz volumetric virtual staining from ordered blockface image sequences.
+Full workflow documentation is in [docs/stainviz3d.md](docs/stainviz3d.md).
 
-The implemented release is **2.5D volumetric**, not a native 3D convolutional generator. Models consume a small ordered slab of neighboring planes, usually `K=3` or `K=5`, share 2D encoder weights across planes, fuse slice context with z-aware attention, and train/infer with cross-slice consistency constraints. The output is a full ordered 3D volume assembled by tiled inference.
+## What This Repository Provides
 
-Implemented StainViz workflows:
+- Paired sparse-anchor virtual staining from registered H&E/IHC planes.
+- Unpaired volumetric CycleGAN training from ordered blockface slabs and unpaired stain-domain images.
+- Raw-folder manifest preparation with specimen-safe splits.
+- Optional registration preprocessing and confidence maps.
+- 2.5D shared-encoder generator with physical-z fusion.
+- Cross-slice consistency losses using registration confidence, tissue masks, and source-change gating.
+- Deterministic tiled whole-volume inference.
+- Stable volume output contract for later StainViz platform integration.
+- Specimen-level evaluation metrics and provenance recording.
 
-- Paired sparse-anchor pix2pix: `--dataset_mode blockface_paired --model stainviz_3d_pix2pix`
-- Unpaired volumetric CycleGAN: `--dataset_mode blockface_unaligned --model stainviz_3d_cycle_gan`
-- Raw-folder manifest preparation, specimen-safe splitting, optional registration preprocessing, normalization, tiled volume inference, metrics, and provenance output
-- Stable inference outputs: ordered PNG/TIFF slices, `volume.npy`, `metrics.json`, `provenance.json`, masks/confidence, and `manifest_used.csv`
+## 2.5D Versus Native 3D
 
-Start with [docs/stainviz3d.md](docs/stainviz3d.md) for the full preparation, training, inference, and evaluation workflow.
+StainViz-3D uses volumetric context without training a full native 3D generator.
 
-## Upstream CycleGAN and pix2pix Base
+The generator accepts either:
 
-This project preserves the original `pix2pix`, `cycle_gan`, `aligned`, `unaligned`, and `single` workflows while adding the StainViz-3D research pipeline.
+- `K=1`: compatible 2D path
+- `K=3`: default 2.5D context
+- `K=5`: optional wider z-context when memory allows
 
-**Update in 2025**: we recently updated the code to support Python 3.11 and PyTorch 2.4. It also supports DDP for single-machine multiple-GPU training. (Please use `torchrun --nproc_per_node=4 train.py ...`)
+Each plane is encoded with shared 2D weights. Bottleneck features are fused with masked multi-head attention using physical z-position embeddings. The decoder produces stain predictions for valid planes, while adversarial supervision uses the center plane for compatibility with the existing 2D discriminator path.
 
-**New**: Please check out [img2img-turbo](https://github.com/GaParmar/img2img-turbo) repo that includes both pix2pix-turbo and CycleGAN-Turbo. Our new one-step image-to-image translation methods can support both paired and unpaired training and produce better results by leveraging the pre-trained StableDiffusion-Turbo model. The inference time for 512x512 image is 0.29 sec on A6000 and 0.11 sec on A100.
+This design targets a single 24 GB GPU with 256 to 512 px patches, mixed precision, and tiled full-volume inference.
 
-Please check out [contrastive-unpaired-translation](https://github.com/taesungp/contrastive-unpaired-translation) (CUT), our new unpaired image-to-image translation model that enables fast and memory-efficient training.
+## Implemented Workflows
 
-We provide PyTorch implementations for both unpaired and paired image-to-image translation.
+### Paired 2.5D Pix2pix
 
-The code was written by [Jun-Yan Zhu](https://github.com/junyanz) and [Taesung Park](https://github.com/taesungp), and supported by [Tongzhou Wang](https://github.com/SsnL).
-
-This PyTorch implementation produces results comparable to or better than our original Torch software. If you would like to reproduce the same results as in the papers, check out the original [CycleGAN Torch](https://github.com/junyanz/CycleGAN) and [pix2pix Torch](https://github.com/phillipi/pix2pix) code in Lua/Torch.
-
-**Note**: The current software works well with PyTorch 2.4+. Check out the older [branch](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/tree/pytorch0.3.1) that supports PyTorch 0.1-0.3.
-
-You may find useful information in [training/test tips](docs/tips.md) and [frequently asked questions](docs/qa.md). To implement custom models and datasets, check out our [templates](#custom-model-and-dataset). To help users better understand and adapt our codebase, we provide an [overview](docs/overview.md) of the code structure of this repository.
-
-**CycleGAN: [Project](https://junyanz.github.io/CycleGAN/) | [Paper](https://arxiv.org/pdf/1703.10593.pdf) | [Torch](https://github.com/junyanz/CycleGAN) |
-[Tensorflow Core Tutorial](https://www.tensorflow.org/tutorials/generative/cyclegan) | [PyTorch Colab](https://colab.research.google.com/github/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/CycleGAN.ipynb)**
-
-<img src="https://junyanz.github.io/CycleGAN/images/teaser_high_res.jpg" width="800"/>
-
-**Pix2pix: [Project](https://phillipi.github.io/pix2pix/) | [Paper](https://arxiv.org/pdf/1611.07004.pdf) | [Torch](https://github.com/phillipi/pix2pix) |
-[Tensorflow Core Tutorial](https://www.tensorflow.org/tutorials/generative/pix2pix) | [PyTorch Colab](https://colab.research.google.com/github/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/pix2pix.ipynb)**
-
-<img src="https://phillipi.github.io/pix2pix/images/teaser_v3.png" width="800px"/>
-
-**[EdgesCats Demo](https://affinelayer.com/pixsrv/) | [pix2pix-tensorflow](https://github.com/affinelayer/pix2pix-tensorflow) | by [Christopher Hesse](https://twitter.com/christophrhesse)**
-
-<img src='imgs/edges2cats.jpg' width="400px"/>
-
-If you use this code for your research, please cite:
-
-Unpaired Image-to-Image Translation using Cycle-Consistent Adversarial Networks.<br>
-[Jun-Yan Zhu](https://www.cs.cmu.edu/~junyanz/)\*, [Taesung Park](https://taesung.me/)\*, [Phillip Isola](https://people.eecs.berkeley.edu/~isola/), [Alexei A. Efros](https://people.eecs.berkeley.edu/~efros). In ICCV 2017. (\* equal contributions) [[Bibtex]](https://junyanz.github.io/CycleGAN/CycleGAN.txt)
-
-Image-to-Image Translation with Conditional Adversarial Networks.<br>
-[Phillip Isola](https://people.eecs.berkeley.edu/~isola), [Jun-Yan Zhu](https://www.cs.cmu.edu/~junyanz/), [Tinghui Zhou](https://people.eecs.berkeley.edu/~tinghuiz), [Alexei A. Efros](https://people.eecs.berkeley.edu/~efros). In CVPR 2017. [[Bibtex]](https://www.cs.cmu.edu/~junyanz/projects/pix2pix/pix2pix.bib)
-
-## Talks and Course
-
-pix2pix slides: [keynote](http://efrosgans.eecs.berkeley.edu/CVPR18_slides/pix2pix.key) | [pdf](http://efrosgans.eecs.berkeley.edu/CVPR18_slides/pix2pix.pdf),
-CycleGAN slides: [pptx](http://efrosgans.eecs.berkeley.edu/CVPR18_slides/CycleGAN.pptx) | [pdf](http://efrosgans.eecs.berkeley.edu/CVPR18_slides/CycleGAN.pdf)
-
-CycleGAN course assignment [code](http://www.cs.toronto.edu/~rgrosse/courses/csc321_2018/assignments/a4-code.zip) and [handout](http://www.cs.toronto.edu/~rgrosse/courses/csc321_2018/assignments/a4-handout.pdf) designed by Prof. [Roger Grosse](http://www.cs.toronto.edu/~rgrosse/) for [CSC321](http://www.cs.toronto.edu/~rgrosse/courses/csc321_2018/) "Intro to Neural Networks and Machine Learning" at University of Toronto. Please contact the instructor if you would like to adopt it in your course.
-
-## Colab Notebook
-
-TensorFlow Core CycleGAN Tutorial: [Google Colab](https://colab.research.google.com/github/tensorflow/docs/blob/master/site/en/tutorials/generative/cyclegan.ipynb) | [Code](https://github.com/tensorflow/docs/blob/master/site/en/tutorials/generative/cyclegan.ipynb)
-
-TensorFlow Core pix2pix Tutorial: [Google Colab](https://colab.research.google.com/github/tensorflow/docs/blob/master/site/en/tutorials/generative/pix2pix.ipynb) | [Code](https://github.com/tensorflow/docs/blob/master/site/en/tutorials/generative/pix2pix.ipynb)
-
-PyTorch Colab notebook: [CycleGAN](https://colab.research.google.com/github/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/CycleGAN.ipynb) and [pix2pix](https://colab.research.google.com/github/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/pix2pix.ipynb)
-
-ZeroCostDL4Mic Colab notebook: [CycleGAN](https://colab.research.google.com/github/HenriquesLab/ZeroCostDL4Mic/blob/master/Colab_notebooks_Beta/CycleGAN_ZeroCostDL4Mic.ipynb) and [pix2pix](https://colab.research.google.com/github/HenriquesLab/ZeroCostDL4Mic/blob/master/Colab_notebooks_Beta/pix2pix_ZeroCostDL4Mic.ipynb)
-
-## Other implementations
-
-### CycleGAN
-
-<p><a href="https://github.com/leehomyc/cyclegan-1"> [Tensorflow]</a> (by Harry Yang),
-<a href="https://github.com/architrathore/CycleGAN/">[Tensorflow]</a> (by Archit Rathore),
-<a href="https://github.com/vanhuyz/CycleGAN-TensorFlow">[Tensorflow]</a> (by Van Huy),
-<a href="https://github.com/XHUJOY/CycleGAN-tensorflow">[Tensorflow]</a> (by Xiaowei Hu),
-<a href="https://github.com/LynnHo/CycleGAN-Tensorflow-2"> [Tensorflow2]</a> (by Zhenliang He),
-<a href="https://github.com/luoxier/CycleGAN_Tensorlayer"> [TensorLayer1.0]</a> (by luoxier),
-<a href="https://github.com/tensorlayer/cyclegan"> [TensorLayer2.0]</a> (by zsdonghao),
-<a href="https://github.com/Aixile/chainer-cyclegan">[Chainer]</a> (by Yanghua Jin),
-<a href="https://github.com/yunjey/mnist-svhn-transfer">[Minimal PyTorch]</a> (by yunjey),
-<a href="https://github.com/Ldpe2G/DeepLearningForFun/tree/master/Mxnet-Scala/CycleGAN">[Mxnet]</a> (by Ldpe2G),
-<a href="https://github.com/tjwei/GANotebooks">[lasagne/Keras]</a> (by tjwei),
-<a href="https://github.com/simontomaskarlsson/CycleGAN-Keras">[Keras]</a> (by Simon Karlsson),
-<a href="https://github.com/Ldpe2G/DeepLearningForFun/tree/master/Oneflow-Python/CycleGAN">[OneFlow]</a> (by Ldpe2G)
-</p>
-</ul>
-
-### pix2pix
-
-<p><a href="https://github.com/affinelayer/pix2pix-tensorflow"> [Tensorflow]</a> (by Christopher Hesse),
-<a href="https://github.com/Eyyub/tensorflow-pix2pix">[Tensorflow]</a> (by Eyyüb Sariu),
-<a href="https://github.com/datitran/face2face-demo"> [Tensorflow (face2face)]</a> (by Dat Tran),
-<a href="https://github.com/awjuliani/Pix2Pix-Film"> [Tensorflow (film)]</a> (by Arthur Juliani),
-<a href="https://github.com/kaonashi-tyc/zi2zi">[Tensorflow (zi2zi)]</a> (by Yuchen Tian),
-<a href="https://github.com/pfnet-research/chainer-pix2pix">[Chainer]</a> (by mattya),
-<a href="https://github.com/tjwei/GANotebooks">[tf/torch/keras/lasagne]</a> (by tjwei),
-<a href="https://github.com/taey16/pix2pixBEGAN.pytorch">[Pytorch]</a> (by taey16)
-</p>
-</ul>
-
-## Prerequisites
-
-- Linux or macOS
-- Python 3
-- CPU or NVIDIA GPU + CUDA CuDNN
-
-## Getting Started
-
-### Installation
-
-- Clone this repo:
+Use sparse registered H&E/IHC anchors when only some blockface planes have paired targets.
 
 ```bash
-git clone https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
-cd pytorch-CycleGAN-and-pix2pix
+python train.py \
+  --dataset_mode blockface_paired \
+  --model stainviz_3d_pix2pix \
+  --dataroot /path/to/data_root \
+  --manifest_path manifests/blockface_registered.csv \
+  --manifest_root /path/to/data_root \
+  --context_slices 3 \
+  --input_nc 3 \
+  --output_nc 3 \
+  --crop_size 256 \
+  --mixed_precision
 ```
 
-- Install [PyTorch](http://pytorch.org) and other dependencies. For Conda users, you can create a new Conda environment by
+### Unpaired 2.5D CycleGAN
+
+Use ordered blockface slabs for domain A and unpaired H&E images for domain B. If the target stain domain is unordered, B uses `K=1`.
 
 ```bash
-conda env create -f environment.yml
+python train.py \
+  --dataset_mode blockface_unaligned \
+  --model stainviz_3d_cycle_gan \
+  --dataroot /path/to/data_root \
+  --manifest_path manifests/blockface_and_he.csv \
+  --manifest_root /path/to/data_root \
+  --source_domain blockface \
+  --target_domain HE \
+  --context_slices 3 \
+  --input_nc 3 \
+  --output_nc 3 \
+  --crop_size 256 \
+  --mixed_precision \
+  --init_G_A_from checkpoints/stainviz3d_pix2pix_k3/latest_net_G.pth
 ```
 
-and then activate the environment by
+### Whole-Volume Inference
+
+Run deterministic inference over one selected volume. The inference path uses overlapping XY tiles and z-slabs, accumulates repeated z predictions, and preserves missing or corrupt planes as flagged outputs.
 
 ```bash
-conda activate pytorch-img2img
+python -m scripts.stainviz.infer_volume \
+  --manifest manifests/blockface_registered.csv \
+  --manifest-root /path/to/data_root \
+  --domain blockface \
+  --split test \
+  --volume-id spec_abc123_volume \
+  --checkpoint checkpoints/stainviz3d_pix2pix_k3/latest_net_G.pth \
+  --output-dir outputs/spec_abc123_he \
+  --target-stain HE \
+  --context-slices 3 \
+  --tile-size 512 \
+  --overlap-xy 64 \
+  --device cuda
 ```
 
-- For Docker users, we provide the pre-built Docker image and Dockerfile. Please refer to our [Docker](docs/docker.md) page.
-- For Repl users, please click [![Run on Repl.it](https://repl.it/badge/github/junyanz/pytorch-CycleGAN-and-pix2pix)](https://repl.it/github/junyanz/pytorch-CycleGAN-and-pix2pix).
+## Data Preparation
 
-### CycleGAN train/test
+Raw data is expected to use one specimen or volume per directory. Filenames must contain a recoverable numeric plane index.
 
-- Download a CycleGAN dataset (e.g. maps):
+Prepare a manifest:
 
 ```bash
-bash ./datasets/download_cyclegan_dataset.sh maps
+python -m scripts.stainviz.prepare_manifest \
+  --raw-root /path/to/raw_blockface \
+  --output-manifest manifests/blockface.csv \
+  --qc-summary manifests/blockface_qc.json \
+  --domain blockface \
+  --filename-regex 'slice_(?P<index>\d+)' \
+  --z-spacing-um 20 \
+  --microns-per-pixel 10 \
+  --split-ratios 0.7,0.15,0.15 \
+  --seed 13
 ```
 
-- To log training progress and test images to W&B dashboard, set the `--use_wandb` flag with training script
-- Train a model:
+Validate a manifest before training or inference:
 
 ```bash
-#!./scripts/train_cyclegan.sh
-python train.py --dataroot ./datasets/maps --name maps_cyclegan --model cycle_gan --use_wandb
+python -m scripts.stainviz.validate_manifest \
+  --manifest manifests/blockface.csv \
+  --manifest-root /path/to/raw_blockface
 ```
 
-To see more intermediate results, check out `./checkpoints/maps_cyclegan/web/index.html`.
+Validation rejects duplicate planes, specimen leakage across splits, non-monotonic z ordering, missing files, unavailable paired targets, inconsistent resolution metadata, and incompatible fields. Planes explicitly marked `missing=true` are preserved as missing entries for inference.
 
-- Test the model:
+## Registration
+
+If slices are already aligned, write explicit identity grids:
 
 ```bash
-#!./scripts/test_cyclegan.sh
-python test.py --dataroot ./datasets/maps --name maps_cyclegan --model cycle_gan
+python -m scripts.stainviz.register_slices identity-grids \
+  --manifest manifests/blockface.csv \
+  --manifest-root /path/to/data_root \
+  --output-dir registration/blockface_identity \
+  --output-manifest manifests/blockface_registered.csv \
+  --assume-registered
 ```
 
-- The test results will be saved to a html file here: `./results/maps_cyclegan/latest_test/index.html`.
-
-### pix2pix train/test
-
-- Download a pix2pix dataset (e.g.[facades](http://cmp.felk.cvut.cz/~tylecr1/facade/)):
+For estimated registration, install SimpleITK and use the `estimate` subcommand to produce a normalized `grid_sample(..., align_corners=False)` grid and confidence map:
 
 ```bash
-bash ./datasets/download_pix2pix_dataset.sh facades
+python -m scripts.stainviz.register_slices estimate \
+  --fixed /path/to/fixed_next_slice.tif \
+  --moving /path/to/moving_current_slice.tif \
+  --output-grid registration/000120_to_000121.npz \
+  --output-confidence registration/000120_to_000121_confidence.npy \
+  --metric mattes \
+  --transform affine
 ```
 
-- To log training progress and test images to W&B dashboard, set the `--use_wandb` flag with training script
-- Train a model:
+## Output Contract
+
+Whole-volume inference writes:
+
+- `slices/000000.png`, ordered by manifest slice order
+- `volume.npy`, float32 volume in `[Z,C,H,W]`
+- `metrics.json`, tile grid, z prediction counts, and inference metadata
+- `provenance.json`, checkpoint hash, code commit, target stain, calibration, exclusions, normalization, and interpolation details
+- `confidence.npy`, per-slice prediction count proxy
+- `manifest_used.csv`, exact manifest subset used for inference
+
+TIFF output is optional. PNG slices and `volume.npy` are the stable fallback.
+
+## Evaluation
+
+Compare K=1 and volumetric checkpoints with specimen-level metrics:
 
 ```bash
-#!./scripts/train_pix2pix.sh
-python train.py --dataroot ./datasets/facades --name facades_pix2pix --model pix2pix --direction BtoA  --use_wandb
+python -m scripts.stainviz.evaluate_volume \
+  --baseline-volume outputs/spec_abc123_he_k1/volume.npy \
+  --volumetric-volume outputs/spec_abc123_he_k3/volume.npy \
+  --target-volume outputs/spec_abc123_anchor_targets/volume.npy \
+  --valid-indices 10,42,87 \
+  --output reports/spec_abc123_eval.json
 ```
 
-To see more intermediate results, check out `./checkpoints/facades_pix2pix/web/index.html`.
+The evaluator reports SSIM, PSNR, CIEDE2000, intensity correlation on paired anchors, adjacent-slice volumetric discontinuity, and a z-smoothing control.
 
-- Test the model (`bash ./scripts/test_pix2pix.sh`):
+## Repository Layout
+
+- `data/blockface_paired_dataset.py`: paired sparse-anchor slab dataset
+- `data/blockface_unaligned_dataset.py`: unpaired blockface/stain slab dataset
+- `data/stainviz_manifest.py`: manifest schema, validation, and raw-folder preparation
+- `models/stainviz_3d_networks.py`: shared 2.5D generator
+- `models/stainviz_3d_pix2pix_model.py`: paired StainViz pix2pix model
+- `models/stainviz_3d_cycle_gan_model.py`: unpaired StainViz CycleGAN model
+- `models/stainviz_losses.py`: masked reconstruction and cross-slice consistency losses
+- `scripts/stainviz/`: preparation, registration, normalization, inference, and evaluation commands
+- `util/stainviz_volume_io.py`: tiled whole-volume inference and output packaging
+- `docs/stainviz3d.md`: detailed workflow documentation
+- `tests/test_stainviz_*.py`: manifest, dataset, generator, loss, model, inference, and option regression tests
+
+## Verification
+
+Run the StainViz test suite:
 
 ```bash
-#!./scripts/test_pix2pix.sh
-python test.py --dataroot ./datasets/facades --name facades_pix2pix --model pix2pix --direction BtoA
+python3 -m pytest tests -q
 ```
 
-- The test results will be saved to a html file here: `./results/facades_pix2pix/test_latest/index.html`. You can find more scripts at `scripts` directory.
-- To train and test pix2pix-based colorization models, please add `--model colorization` and `--dataset_mode colorization`. See our training [tips](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/tips.md#notes-on-colorization) for more details.
-
-### Apply a pre-trained model (CycleGAN)
-
-- You can download a pretrained model (e.g. horse2zebra) with the following script:
+Run lint:
 
 ```bash
-bash ./scripts/download_cyclegan_model.sh horse2zebra
+python3 -m flake8 --ignore E501 .
 ```
 
-- The pretrained model is saved at `./checkpoints/{name}_pretrained/latest_net_G.pth`. Check [here](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/scripts/download_cyclegan_model.sh#L3) for all the available CycleGAN models.
-- To test the model, you also need to download the horse2zebra dataset:
+## Scope and Limitations
 
-```bash
-bash ./datasets/download_cyclegan_dataset.sh horse2zebra
-```
+This release intentionally excludes uncertainty prediction, learned registration, native 3D generation, conditional multi-stain training, and a post-generation 3D refiner.
 
-- Then generate the results using
-
-```bash
-python test.py --dataroot datasets/horse2zebra/testA --name horse2zebra_pretrained --model test --no_dropout
-```
-
-- The option `--model test` is used for generating results of CycleGAN only for one side. This option will automatically set `--dataset_mode single`, which only loads the images from one set. On the contrary, using `--model cycle_gan` requires loading and generating results in both directions, which is sometimes unnecessary. The results will be saved at `./results/`. Use `--results_dir {directory_path_to_save_result}` to specify the results directory.
-
-- For pix2pix and your own models, you need to explicitly specify `--netG`, `--norm`, `--no_dropout` to match the generator architecture of the trained model. See this [FAQ](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/qa.md#runtimeerror-errors-in-loading-state_dict-812-671461-296) for more details.
-
-### Apply a pre-trained model (pix2pix)
-
-Download a pre-trained model with `./scripts/download_pix2pix_model.sh`.
-
-- Check [here](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/scripts/download_pix2pix_model.sh#L3) for all the available pix2pix models. For example, if you would like to download label2photo model on the Facades dataset,
-
-```bash
-bash ./scripts/download_pix2pix_model.sh facades_label2photo
-```
-
-- Download the pix2pix facades datasets:
-
-```bash
-bash ./datasets/download_pix2pix_dataset.sh facades
-```
-
-- Then generate the results using
-
-```bash
-python test.py --dataroot ./datasets/facades/ --direction BtoA --model pix2pix --name facades_label2photo_pretrained
-```
-
-- Note that we specified `--direction BtoA` as Facades dataset's A to B direction is photos to labels.
-
-- If you would like to apply a pre-trained model to a collection of input images (rather than image pairs), please use `--model test` option. See `./scripts/test_single.sh` for how to apply a model to Facade label maps (stored in the directory `facades/testB`).
-
-- See a list of currently available models at `./scripts/download_pix2pix_model.sh`
-
-### Multi-GPU training
-
-To train a model on multiple GPUs, please use `torchrun --nproc_per_node=4 train.py ...` instead of `python train.py ...`. We also need to use synchronized batchnorm by setting `--norm sync_batch` (or `--norm sync_instance` for instance normgalization). The `--norm batch` is not compatible with DDP.
-
-## [Docker](docs/docker.md)
-
-We provide the pre-built Docker image and Dockerfile that can run this code repo. See [docker](docs/docker.md).
-
-## [Datasets](docs/datasets.md)
-
-Download pix2pix/CycleGAN datasets and create your own datasets.
-
-## [Training/Test Tips](docs/tips.md)
-
-Best practice for training and testing your models.
-
-## [Frequently Asked Questions](docs/qa.md)
-
-Before you post a new question, please first look at the above Q & A and existing GitHub issues.
-
-## Custom Model and Dataset
-
-If you plan to implement custom models and dataset for your new applications, we provide a dataset [template](data/template_dataset.py) and a model [template](models/template_model.py) as a starting point.
-
-## [Code structure](docs/overview.md)
-
-To help users better understand and use our code, we briefly overview the functionality and implementation of each package and each module.
-
-## Pull Request
-
-You are always welcome to contribute to this repository by sending a [pull request](https://help.github.com/articles/about-pull-requests/).
-Please run `flake8 --ignore E501 .` and `pytest scripts/test_before_push.py -v` before you commit the code. Please also update the code structure [overview](docs/overview.md) accordingly if you add or remove files.
-
-## Citation
-
-If you use this code for your research, please cite our papers.
-
-```
-@inproceedings{CycleGAN2017,
-  title={Unpaired Image-to-Image Translation using Cycle-Consistent Adversarial Networks},
-  author={Zhu, Jun-Yan and Park, Taesung and Isola, Phillip and Efros, Alexei A},
-  booktitle={Computer Vision (ICCV), 2017 IEEE International Conference on},
-  year={2017}
-}
-
-
-@inproceedings{isola2017image,
-  title={Image-to-Image Translation with Conditional Adversarial Networks},
-  author={Isola, Phillip and Zhu, Jun-Yan and Zhou, Tinghui and Efros, Alexei A},
-  booktitle={Computer Vision and Pattern Recognition (CVPR), 2017 IEEE Conference on},
-  year={2017}
-}
-```
-
-## Other Languages
-
-[Spanish](docs/README_es.md)
-
-## Related Projects
-
-[img2img-turbo](https://github.com/GaParmar/img2img-turbo)<br>
-[contrastive-unpaired-translation](https://github.com/taesungp/contrastive-unpaired-translation) (CUT)<br>
-[CycleGAN-Torch](https://github.com/junyanz/CycleGAN) |
-[pix2pix-Torch](https://github.com/phillipi/pix2pix) | [pix2pixHD](https://github.com/NVIDIA/pix2pixHD)|
-[BicycleGAN](https://github.com/junyanz/BicycleGAN) | [vid2vid](https://tcwang0509.github.io/vid2vid/) | [SPADE/GauGAN](https://github.com/NVlabs/SPADE)<br>
-[iGAN](https://github.com/junyanz/iGAN) | [GAN Dissection](https://github.com/CSAILVision/GANDissect) | [GAN Paint](http://ganpaint.io/)
-
-## Cat Paper Collection
-
-If you love cats, and love reading cool graphics, vision, and learning papers, please check out the Cat Paper [Collection](https://github.com/junyanz/CatPapers).
-
-## Acknowledgments
-
-Our code is inspired by [pytorch-DCGAN](https://github.com/pytorch/examples/tree/master/dcgan).
+The pipeline is research-use software. It does not make clinical claims, and it does not define fixed performance thresholds before real specimen-level characterization.
