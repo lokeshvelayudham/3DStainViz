@@ -98,7 +98,7 @@ class cityscapes:
         Extract pixels at the true boundary by dilation - erosion of label.
         Don't just pick the void label as it is not exclusive to the boundaries.
         """
-        assert(thickness is not None)
+        assert thickness is not None
         import skimage.morphology as skm
         void = 255
         mask = np.logical_and(label > 0, label != void)[0]

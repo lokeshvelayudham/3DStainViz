@@ -137,10 +137,8 @@ class StainViz3DCycleGANModel(BaseModel):
             ) * self.opt.lambda_cross_B
         else:
             self.loss_cross_B = 0.0
-        self.loss_G = (
-            self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B
-            + self.loss_idt_A + self.loss_idt_B + self.loss_cross_A + self.loss_cross_B
-        )
+        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B
+        self.loss_G = self.loss_G + self.loss_idt_A + self.loss_idt_B + self.loss_cross_A + self.loss_cross_B
         self.scaler.scale(self.loss_G).backward()
 
     def optimize_parameters(self):

@@ -105,4 +105,3 @@ class CrossSliceConsistencyLoss(nn.Module):
         if not pair_losses:
             return prediction.sum() * 0.0
         return torch.stack(pair_losses).mean()
-

@@ -19,7 +19,7 @@ class JointVolumeTransform:
     @staticmethod
     def _crop(tensor: torch.Tensor, crop: Tuple[int, int, int, int]) -> torch.Tensor:
         top, left, height, width = crop
-        return tensor[..., top : top + height, left : left + width]
+        return tensor[..., top:top + height, left:left + width]
 
     @staticmethod
     def _transform_grid(

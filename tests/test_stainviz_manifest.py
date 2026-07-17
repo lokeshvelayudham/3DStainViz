@@ -21,6 +21,7 @@ FIELDS = [
     "z_um",
     "image_path",
     "microns_per_pixel",
+    "missing",
 ]
 
 
@@ -82,6 +83,17 @@ def test_duplicate_plane_is_rejected(tmp_path):
 
     with pytest.raises(ManifestValidationError, match="duplicate plane"):
         validate_manifest(load_manifest(manifest), root=tmp_path)
+
+
+def test_missing_planes_may_be_flagged_without_existing_image_file(tmp_path):
+    manifest = tmp_path / "manifest.csv"
+    row = _row("missing/001.png", index=1)
+    row["missing"] = 1
+    _write_manifest(manifest, [row])
+
+    report = validate_manifest(load_manifest(manifest), root=tmp_path)
+
+    assert report["records"] == 1
 
 
 def test_raw_folder_preparation_is_specimen_safe_and_deterministic(tmp_path):

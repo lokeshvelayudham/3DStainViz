@@ -31,10 +31,8 @@ class SinusoidalZEmbedding(nn.Module):
 
     def forward(self, offsets: torch.Tensor) -> torch.Tensor:
         half = self.dimension // 2
-        frequencies = torch.exp(
-            torch.arange(half, device=offsets.device, dtype=offsets.dtype)
-            * (-math.log(10000.0) / max(half - 1, 1))
-        )
+        factor = -math.log(10000.0) / max(half - 1, 1)
+        frequencies = torch.exp(torch.arange(half, device=offsets.device, dtype=offsets.dtype) * factor)
         angles = offsets.unsqueeze(-1) * frequencies.unsqueeze(0).unsqueeze(0)
         embedding = torch.cat((torch.sin(angles), torch.cos(angles)), dim=-1)
         if embedding.shape[-1] < self.dimension:
@@ -138,7 +136,7 @@ class StainViz25DGenerator(nn.Module):
             z_offsets = z_offsets.unsqueeze(0).expand(batch, -1)
         else:
             z_offsets = z_offsets.to(device=x.device, dtype=x.dtype)
-            z_offsets = z_offsets - z_offsets[:, slices // 2 : slices // 2 + 1]
+            z_offsets = z_offsets - z_offsets[:, slices // 2:slices // 2 + 1]
         if neighbor_valid is None:
             neighbor_valid = torch.ones(batch, slices, device=x.device, dtype=torch.bool)
         else:
@@ -157,10 +155,9 @@ class StainViz25DGenerator(nn.Module):
         return output
 
 
-def define_stainviz_generator(input_nc: int, output_nc: int, ngf: int, fusion_heads: int, gpu_ids):
+def define_stainviz_generator(input_nc: int, output_nc: int, ngf: int, fusion_heads: int):
     """Create and initialize a StainViz generator using upstream initialization."""
     from . import networks
 
     generator = StainViz25DGenerator(input_nc, output_nc, ngf, fusion_heads)
-    return networks.init_net(generator, "normal", 0.02, gpu_ids)
-
+    return networks.init_net(generator, "normal", 0.02)

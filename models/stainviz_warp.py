@@ -15,4 +15,3 @@ def identity_grid(height: int, width: int, device=None, dtype=torch.float32) -> 
 def warp_image(image: torch.Tensor, grid: torch.Tensor) -> torch.Tensor:
     """Warp ``[B,C,H,W]`` images with ``[B,H,W,2]`` normalized grids."""
     return F.grid_sample(image, grid, mode="bilinear", padding_mode="border", align_corners=False)
-

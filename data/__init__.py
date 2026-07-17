@@ -14,7 +14,6 @@ See our template dataset class 'template_dataset.py' for more details.
 import importlib
 import torch.utils.data
 from torch.utils.data.distributed import DistributedSampler
-import torch.distributed as dist
 import os
 from data.base_dataset import BaseDataset
 

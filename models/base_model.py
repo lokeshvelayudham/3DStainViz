@@ -283,8 +283,6 @@ class BaseModel(ABC):
             init_type (str) -- initialization method: normal | xavier | kaiming | orthogonal
             init_gain (float) -- scaling factor for normal, xavier and orthogonal
         """
-        import os
-
         for name in self.model_names:
             if isinstance(name, str):
                 net = getattr(self, "net" + name)

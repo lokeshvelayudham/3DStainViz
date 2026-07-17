@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
 from util import util
-import torch
 import models
 import data
 

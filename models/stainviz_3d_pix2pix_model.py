@@ -149,4 +149,3 @@ class StainViz3DPix2PixModel(BaseModel):
             self.backward_G()
         self.scaler.step(self.optimizer_G)
         self.scaler.update()
-

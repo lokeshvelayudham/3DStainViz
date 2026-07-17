@@ -138,10 +138,14 @@ def validate_manifest(
         if record.split not in {"train", "val", "test"}:
             errors.append(f"unsupported split {record.split!r} for {record.specimen_id}")
         for label, value in (("image", record.image_path), ("paired target", record.paired_target_path)):
+            if label == "image" and record.missing:
+                continue
             if value and not resolve_manifest_path(value, root_path).exists():
                 errors.append(f"missing {label} file for {record.volume_id}:{record.slice_index}")
         if record.pair_valid and not record.paired_target_path:
             errors.append(f"pair_valid is true but paired target is unavailable for {record.volume_id}:{record.slice_index}")
+        if record.missing and record.pair_valid:
+            errors.append(f"missing source plane cannot also be a valid pair for {record.volume_id}:{record.slice_index}")
         if record.microns_per_pixel <= 0:
             errors.append(f"microns_per_pixel must be positive for {record.volume_id}:{record.slice_index}")
     for specimen, splits in split_by_specimen.items():
@@ -253,4 +257,3 @@ def write_manifest(records: Iterable[ManifestRecord], path: Union[str, Path]) ->
         writer = csv.DictWriter(handle, fieldnames=names)
         writer.writeheader()
         writer.writerows(rows)
-

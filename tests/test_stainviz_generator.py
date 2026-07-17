@@ -45,4 +45,3 @@ def test_return_features_and_confidence_inputs_are_supported():
 
     assert set(output["features"]) == {"encoded", "fused"}
     assert output["features"]["encoded"].shape[:2] == (1, 3)
-

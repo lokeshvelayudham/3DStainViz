@@ -27,4 +27,3 @@ def load_generator_checkpoint(net, path: str, allow_partial: bool = False) -> Di
         f"unexpected={len(report['unexpected'])}"
     )
     return report
-

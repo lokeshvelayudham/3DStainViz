@@ -118,6 +118,34 @@ def test_paired_dataset_returns_slab_contract_with_sparse_anchor(tmp_path):
     assert sample["center_index"].item() == 1
 
 
+def test_paired_dataset_preserves_flagged_missing_plane(tmp_path):
+    rows = []
+    for index in range(3):
+        row = {
+            "specimen_id": "spec_1",
+            "volume_id": "vol_1",
+            "domain": "blockface",
+            "split": "train",
+            "slice_index": index,
+            "z_um": index * 20,
+            "image_path": f"source/{index:03d}.png",
+            "microns_per_pixel": 10,
+        }
+        if index == 1:
+            row["missing"] = 1
+        else:
+            _save_rgb(tmp_path / row["image_path"], 20 + index)
+        rows.append(row)
+    manifest = tmp_path / "manifest.csv"
+    _write_manifest(manifest, rows)
+
+    sample = BlockfacePairedDataset(_base_opt(tmp_path, manifest))[1]
+
+    assert torch.count_nonzero(sample["A"][1]) == 0
+    assert sample["neighbor_valid_A"].tolist() == [True, False, True]
+    assert torch.count_nonzero(sample["warp_conf_A_to_next"]) == 0
+
+
 def test_unaligned_dataset_uses_single_valid_target_for_unordered_collection(tmp_path):
     rows = []
     for index in range(3):

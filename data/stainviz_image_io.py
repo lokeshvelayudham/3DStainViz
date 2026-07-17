@@ -57,4 +57,3 @@ def load_mask_tensor(path: Union[str, Path]) -> torch.Tensor:
     """Load a mask as a binary ``[1,H,W]`` tensor."""
     tensor, _ = load_image_tensor(path, channels=1, normalize=False)
     return (tensor > 0).float()
-

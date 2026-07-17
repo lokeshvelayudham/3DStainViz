@@ -105,4 +105,3 @@ def test_cyclegan_model_plugin_handles_ordered_a_and_unordered_b(tmp_path):
     assert model.fake_B_center.shape == (1, 3, 32, 32)
     assert model.fake_A_center.shape == (1, 3, 32, 32)
     assert model.loss_cross_B == 0.0
-

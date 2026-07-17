@@ -27,7 +27,6 @@ See training and test tips at: https://github.com/junyanz/pytorch-CycleGAN-and-p
 See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/qa.md
 """
 
-import os
 from pathlib import Path
 from options.test_options import TestOptions
 from data import create_dataset
@@ -39,18 +38,21 @@ import torch
 try:
     import wandb
 except ImportError:
+    wandb = None
     print('Warning: wandb package cannot be found. The option "--use_wandb" will result in error.')
 
 
 if __name__ == "__main__":
     opt = TestOptions().parse()  # get test options
+    if opt.use_wandb and wandb is None:
+        raise ImportError("wandb package cannot be found")
     opt.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # hard-code some parameters for test
     opt.num_threads = 0  # test code only supports num_threads = 0
     opt.batch_size = 1  # test code only supports batch_size = 1
     opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
     opt.no_flip = True  # no flip; comment this line if results on flipped images are needed.
-    
+
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     model = create_model(opt)  # create a model given opt.model and other options
     model.setup(opt)  # regular setup: load and print networks; create schedulers
